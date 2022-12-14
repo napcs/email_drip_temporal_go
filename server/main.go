@@ -8,38 +8,25 @@ import (
 	"net/http"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/worker"
 )
 
 // global client.
-var workflowClient client.Client
+var temporalClient client.Client
 var taskQueueName string
 
 func main() {
-	var err error
 	port := "4000"
 	taskQueueName = "email_drips"
 
-	workflowClient, err = client.Dial(client.Options{
+	var err error
+
+	temporalClient, err = client.Dial(client.Options{
 		HostPort: client.DefaultHostPort,
 	})
 
 	if err != nil {
 		panic(err)
 	}
-
-	// Create worker and register Workflow and Activity
-	w := worker.New(workflowClient, taskQueueName, worker.Options{})
-	w.RegisterWorkflow(emaildrips.UserSubscriptionWorkflow)
-	w.RegisterActivity(emaildrips.SendContentEmail)
-
-	// Start the Worker so it's interruptable.
-	go func() {
-		err = w.Start()
-		if err != nil {
-			log.Fatalln("Unable to start worker", err)
-		}
-	}()
 
 	fmt.Printf("Starting the web server on port %s\n", port)
 
@@ -92,7 +79,7 @@ func subscribeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// execute the Temporal Workflow to start the subscription.
-	_, err = workflowClient.ExecuteWorkflow(context.Background(), workflowOptions, emaildrips.UserSubscriptionWorkflow, subscription)
+	_, err = temporalClient.ExecuteWorkflow(context.Background(), workflowOptions, emaildrips.UserSubscriptionWorkflow, subscription)
 
 	if err != nil {
 		_, _ = fmt.Fprint(w, "<h1>Couldn't sign up</h1>")
@@ -133,7 +120,7 @@ func unsubscribeHandler(w http.ResponseWriter, r *http.Request) {
 
 		workflowID := "email_drip_" + email
 
-		err = workflowClient.CancelWorkflow(context.Background(), workflowID, "")
+		err = temporalClient.CancelWorkflow(context.Background(), workflowID, "")
 
 		if err != nil {
 			_, _ = fmt.Fprint(w, "<h1>Couldn't unsubscribe you</h1>")

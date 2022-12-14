@@ -7,7 +7,13 @@ long-running Temporal Workflow to send weekly email messages.
 
 Start a Temporal server. 
 
-Then run the following command to start the server:
+Then run the following command to start the web server:
+
+```
+go run server/main.go
+```
+
+In another window, run the following command to start a Worker process:
 
 ```
 go run server/main.go
@@ -33,9 +39,10 @@ The repository contains the following files:
 │   ├── goodbye.md    <- The unsubscribe message
 │   └── welcome.md    <- A welcome message
 ├── server
-│   └── main.go       <- The web server and worker
+│   └── main.go       <- The web server
+├── worker
+│   └── main.go       <- The Temporal worker
 └── subscribe.go      <- The application code including Workflows and Activities.
-
 ```
 
 
@@ -45,6 +52,8 @@ The `server/main.go` file contains a basic Go web server that exposes three endp
 * `/unsubscribe`: Supports `GET` and `POST`:
   * `GET /unsubscribe`: Displays the unsubscribe form
   * `POST /unsubscribe`: processes the unsubscribe request for the form by sending a cancellation request to the Workflow.
+
+The `worker/main.go` file contains the Temporal Worker that executes Workflows and Activities.
 
 The `subscribe.go` file contains the Temporal Workflow and Activity for subscriptions.
 * `UserSubscriptionWorkflow` accepts a `Subscription` which is made up of the email address and the email campaign to send. The campaign is a struct that specifies the email messages that make up the campaign, including the welcome message, the unsubscribe message, and the messages that make up the campaign's contents.

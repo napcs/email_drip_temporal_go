@@ -131,7 +131,7 @@ func unsubscribeHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		workflowID := "subscription_" + email
+		workflowID := "email_drip_" + email
 
 		err = workflowClient.CancelWorkflow(context.Background(), workflowID, "")
 

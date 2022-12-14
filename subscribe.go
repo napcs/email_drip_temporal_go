@@ -63,7 +63,7 @@ func UserSubscriptionWorkflow(ctx workflow.Context, subscription Subscription) e
 			Mail:         subscription.Campaign.UnsubscribeEmail,
 		}
 
-		logger.Info("Sending unsubscribe email to %s", subscription.EmailAddress)
+		logger.Info("Sending unsubscribe email to " + subscription.EmailAddress)
 		err := workflow.ExecuteActivity(newCtx, SendContentEmail, data).Get(newCtx, nil)
 
 		if err != nil {
@@ -71,7 +71,7 @@ func UserSubscriptionWorkflow(ctx workflow.Context, subscription Subscription) e
 		}
 	}()
 
-	logger.Info("Sending welcome email to %s", subscription.EmailAddress)
+	logger.Info("Sending welcome email to " + subscription.EmailAddress)
 
 	data := EmailInfo{
 		EmailAddress: subscription.EmailAddress,
@@ -94,10 +94,10 @@ func UserSubscriptionWorkflow(ctx workflow.Context, subscription Subscription) e
 		err = workflow.ExecuteActivity(ctx, SendContentEmail, data).Get(ctx, nil)
 
 		if err != nil {
-			logger.Error("Failed to send email %s", "Error", mail, err)
+			logger.Error("Failed to send email "+mail, "Error", err)
 		}
 
-		logger.Info("sent content email %s to %s", mail, subscription.EmailAddress)
+		logger.Info("sent content email " + mail + " to " + subscription.EmailAddress)
 
 		workflow.Sleep(ctx, duration)
 	}
@@ -108,7 +108,7 @@ func UserSubscriptionWorkflow(ctx workflow.Context, subscription Subscription) e
 // SendContentEmail is the activity that sends the email to the customer.
 func SendContentEmail(ctx context.Context, emailInfo EmailInfo) error {
 	logger := activity.GetLogger(ctx)
-	logger.Info("Sending email %s to %s", emailInfo.Mail, emailInfo.EmailAddress)
+	logger.Info("Sending email " + emailInfo.Mail + " to " + emailInfo.EmailAddress)
 
 	// call mailer api here.
 	message, err := getEmailFromFile(emailInfo.Mail)

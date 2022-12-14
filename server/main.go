@@ -11,10 +11,14 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
+// global client.
 var workflowClient client.Client
+var taskQueueName string
 
 func main() {
 	var err error
+	port := "4000"
+	taskQueueName = "email_drips"
 
 	workflowClient, err = client.Dial(client.Options{
 		HostPort: client.DefaultHostPort,
@@ -24,12 +28,12 @@ func main() {
 		panic(err)
 	}
 
-	w := worker.New(workflowClient, "email_drips", worker.Options{})
+	// Create worker and register Workflow and Activity
+	w := worker.New(workflowClient, taskQueueName, worker.Options{})
 	w.RegisterWorkflow(emaildrips.UserSubscriptionWorkflow)
-	w.RegisterActivity(emaildrips.WelcomeEmail)
-	w.RegisterActivity(emaildrips.TipsEmail)
-	w.RegisterActivity(emaildrips.UnsubscribeEmail)
+	w.RegisterActivity(emaildrips.SendContentEmail)
 
+	// Start the Worker so it's interruptable.
 	go func() {
 		err = w.Start()
 		if err != nil {
@@ -37,20 +41,22 @@ func main() {
 		}
 	}()
 
-	fmt.Println("Starting dummy server...")
+	fmt.Printf("Starting the web server on port %s\n", port)
 
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/subscribe", subscribeHandler)
 	http.HandleFunc("/unsubscribe", unsubscribeHandler)
-	_ = http.ListenAndServe(":4000", nil)
+	_ = http.ListenAndServe(":"+port, nil)
 
 }
 
+// Index page shows the subscription form.
 func indexHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = fmt.Fprint(w, "<h1>Sign up</h1>")
 	_, _ = fmt.Fprint(w, "<form method='post' action='subscribe'><input required name='email' type='email'><input type='submit' value='Subscribe'>")
 }
 
+// Handle subscriptions from the form.
 func subscribeHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := r.ParseForm()
@@ -68,12 +74,25 @@ func subscribeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// use the email as the id in the workflow. This may leak PII.
 	workflowOptions := client.StartWorkflowOptions{
 		ID:        "email_drip_" + email,
-		TaskQueue: "email_drips",
+		TaskQueue: taskQueueName,
 	}
 
-	_, err = workflowClient.ExecuteWorkflow(context.Background(), workflowOptions, emaildrips.UserSubscriptionWorkflow, email)
+	// Define the subscription
+	subscription := emaildrips.Subscription{
+		EmailAddress: email,
+		Campaign: emaildrips.Campaign{
+			Name:             "Temporal Tips and Tricks",
+			WelcomeEmail:     "../mails/welcome.md",
+			UnsubscribeEmail: "../mails/goodbye.md",
+			Mails:            []string{"../mails/1.md", "../mails/2.md", "../mails/3.md"},
+		},
+	}
+
+	// execute the Temporal Workflow to start the subscription.
+	_, err = workflowClient.ExecuteWorkflow(context.Background(), workflowOptions, emaildrips.UserSubscriptionWorkflow, subscription)
 
 	if err != nil {
 		_, _ = fmt.Fprint(w, "<h1>Couldn't sign up</h1>")
@@ -84,6 +103,7 @@ func subscribeHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Handle unsubscribe requests.
 func unsubscribeHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
@@ -91,10 +111,12 @@ func unsubscribeHandler(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 
 		// http.ServeFile(w, r, "form.html")
-		_, _ = fmt.Fprint(w, "<h1>Unsubscribe</h1>")
-		_, _ = fmt.Fprint(w, "<form method='post' action='unsubscribe'><input required name='email' type='email'><input type='submit' value='Unsubscribe'>")
+		_, _ = fmt.Fprint(w, "<h1>Unsubscribe</h1><form method='post' action='unsubscribe'><input required name='email' type='email'><input type='submit' value='Unsubscribe'>")
+
 	case "POST":
+
 		err := r.ParseForm()
+
 		if err != nil {
 			// in case of any error
 			_, _ = fmt.Fprint(w, "<h1>Error processing form</h1>")

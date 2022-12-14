@@ -1,18 +1,44 @@
 package emaildrips
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"os"
 	"time"
 
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
 )
 
-/* UserSubscriptionWorkflow handles subscribing users */
-func UserSubscriptionWorkflow(ctx workflow.Context, email string) (result string, err error) {
+// EmailInfo is the data that the SendContentEmail uses to send the message.
+type EmailInfo struct {
+	EmailAddress string
+	Mail         string
+}
+
+// Campaign is the info about the email campaign.
+type Campaign struct {
+	Name             string
+	WelcomeEmail     string
+	UnsubscribeEmail string
+	Mails            []string
+}
+
+// Subscription is the user email and the campaign they'll receive.
+type Subscription struct {
+	EmailAddress string
+	Campaign     Campaign
+}
+
+// UserSubscriptionWorkflow handles subscribing users. Accepts a Subsription.
+func UserSubscriptionWorkflow(ctx workflow.Context, subscription Subscription) error {
 	logger := workflow.GetLogger(ctx)
-	logger.Info("Subscription created for " + email)
+	logger.Info("Subscription created for " + subscription.EmailAddress)
+
+	// How frequently to send the messages
+	duration := time.Minute
+	// duration := (24 * 7) * time.Hour
 
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
@@ -28,85 +54,90 @@ func UserSubscriptionWorkflow(ctx workflow.Context, email string) (result string
 			return
 		}
 
-		// Cancellation received, which will be an unsubscribe request.
+		// Cancellation received, which will trigger an unsubscribe email.
 
 		newCtx, _ := workflow.NewDisconnectedContext(ctx)
 
-		logger.Info("Sending unsubscribe email to "+email, err)
-		err := workflow.ExecuteActivity(newCtx, UnsubscribeEmail, email)
+		data := EmailInfo{
+			EmailAddress: subscription.EmailAddress,
+			Mail:         subscription.Campaign.UnsubscribeEmail,
+		}
+
+		logger.Info("Sending unsubscribe email to %s", subscription.EmailAddress)
+		err := workflow.ExecuteActivity(newCtx, SendContentEmail, data).Get(newCtx, nil)
+
 		if err != nil {
 			logger.Error("Unable to send unsubscribe message", "Error", err)
 		}
 	}()
 
-	logger.Info("Sending tips email to " + email)
-	err = workflow.ExecuteActivity(ctx, WelcomeEmail, email).Get(ctx, nil)
+	logger.Info("Sending welcome email to %s", subscription.EmailAddress)
+
+	data := EmailInfo{
+		EmailAddress: subscription.EmailAddress,
+		Mail:         subscription.Campaign.WelcomeEmail,
+	}
+
+	err := workflow.ExecuteActivity(ctx, SendContentEmail, data).Get(ctx, nil)
 
 	if err != nil {
 		logger.Error("Failed to send welcome email", "Error", err)
 	}
 
-	workflow.Sleep(ctx, (24*7)*time.Hour)
+	for _, mail := range subscription.Campaign.Mails {
 
-	logger.Info("Sending tips email to " + email)
-	err = workflow.ExecuteActivity(ctx, TipsEmail, email).Get(ctx, nil)
+		data := EmailInfo{
+			EmailAddress: subscription.EmailAddress,
+			Mail:         mail,
+		}
 
-	if err != nil {
-		logger.Error("Failed to send tips email", "Error", err)
+		err = workflow.ExecuteActivity(ctx, SendContentEmail, data).Get(ctx, nil)
+
+		if err != nil {
+			logger.Error("Failed to send email %s", "Error", mail, err)
+		}
+
+		logger.Info("sent content email %s to %s", mail, subscription.EmailAddress)
+
+		workflow.Sleep(ctx, duration)
 	}
 
-	workflow.Sleep(ctx, (24*7)*time.Hour)
+	return nil
+}
 
-	logger.Info("Sending sales email to " + email)
-	err = workflow.ExecuteActivity(ctx, SalesEmail, email).Get(ctx, nil)
+// SendContentEmail is the activity that sends the email to the customer.
+func SendContentEmail(ctx context.Context, emailInfo EmailInfo) error {
+	logger := activity.GetLogger(ctx)
+	logger.Info("Sending email %s to %s", emailInfo.Mail, emailInfo.EmailAddress)
+
+	// call mailer api here.
+	message, err := getEmailFromFile(emailInfo.Mail)
 
 	if err != nil {
-		logger.Error("Failed to send sales email", "Error", err)
+		return sendMail(message, emailInfo.EmailAddress)
 	}
 
-	return "", nil
-}
-
-/* WelcomeEmail is the activity that sends the welcome email to the customer. */
-func WelcomeEmail(ctx context.Context, email string) error {
-	logger := activity.GetLogger(ctx)
-	logger.Info("Sending welcome email to " + email)
-
-	// call mailer api here.
-
-	return nil
+	logger.Error("Failed getting email", err)
+	return errors.New("unable to locate message to send")
 
 }
 
-/* TipsEmail is the activity that sends the email with tips and tricks to the customer. */
-func TipsEmail(ctx context.Context, email string) error {
-	logger := activity.GetLogger(ctx)
-	logger.Info("Sending tips email to " + email)
+// getEmailFromFile gets the email from the specified text file.
+func getEmailFromFile(filename string) (string, error) {
 
-	// call mailer api here.
+	file, err := os.Open(filename)
 
-	return nil
+	if err != nil {
+		return "", err
+	}
 
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	return scanner.Text(), scanner.Err()
 }
 
-/*  SalesEmail is the activity that sends the email that asks to talk to the customer. */
-func SalesEmail(ctx context.Context, email string) error {
-	logger := activity.GetLogger(ctx)
-	logger.Info("Sending tips email to " + email)
-
-	// call mailer api here.
-
+// mocked mail.
+func sendMail(message string, email string) error {
 	return nil
-
-}
-
-/* UnsubscribeEmail is sent when someone unsubscribes */
-func UnsubscribeEmail(ctx context.Context, email string) error {
-	logger := activity.GetLogger(ctx)
-	logger.Info("Sending tips email to " + email)
-
-	// call mailer api here.
-
-	return nil
-
 }

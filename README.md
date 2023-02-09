@@ -16,7 +16,7 @@ go run server/main.go
 In another window, run the following command to start a Worker process:
 
 ```
-go run server/main.go
+go run worker/main.go
 ```
 
 Visit `http://localhost:4000` and add your email to subscribe.
